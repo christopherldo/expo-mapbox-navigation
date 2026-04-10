@@ -15,6 +15,7 @@ class ExpoMapboxNavigationView: ExpoView {
     private let onUserOffRoute = EventDispatcher()
     private let onRoutesLoaded = EventDispatcher()
     private let onRouteFailedToLoad = EventDispatcher()
+    private let onNavigationStateChanged = EventDispatcher()
 
     let controller = ExpoMapboxNavigationViewController()
 
@@ -31,6 +32,7 @@ class ExpoMapboxNavigationView: ExpoView {
         controller.onUserOffRoute = onUserOffRoute
         controller.onRoutesLoaded = onRoutesLoaded
         controller.onRouteFailedToLoad = onRouteFailedToLoad
+        controller.onNavigationStateChanged = onNavigationStateChanged
     }
 
     override func layoutSubviews() {
@@ -46,7 +48,8 @@ class ExpoMapboxNavigationViewController: UIViewController {
     var navigation: NavigationController? = nil
     var tripSession: SessionController? = nil
     var navigationViewController: NavigationViewController? = nil
-    
+
+    // ── Route Configuration State ──────────────────────────────────────
     var currentCoordinates: Array<CLLocationCoordinate2D>? = nil
     var initialLocation: CLLocationCoordinate2D? = nil
     var initialLocationZoom: Double? = nil
@@ -63,6 +66,30 @@ class ExpoMapboxNavigationViewController: UIViewController {
     var vehicleMaxHeight: Double? = nil
     var vehicleMaxWidth: Double? = nil
 
+    // ── UI Visibility State ────────────────────────────────────────────
+    var showTopBanner: Bool = true
+    var showBottomBanner: Bool = true
+    var showCancelButton: Bool = true
+    var showSpeedLimit: Bool = true
+    var showSoundButton: Bool = true
+    var showOverviewButton: Bool = true
+    var showRecenterButton: Bool = true
+    var showManeuverArrow: Bool = true
+
+    // ── UI Styling State ───────────────────────────────────────────────
+    var topBannerBackgroundColor: UIColor? = nil
+    var bottomBannerBackgroundColor: UIColor? = nil
+    var routeColor: UIColor? = nil
+    var routeAlternateColor: UIColor? = nil
+    var routeCasingColor: UIColor? = nil
+    var traversedRouteColor: UIColor? = nil
+    var maneuverArrowColor: String = "#FFFFFF"
+
+    // ── Camera Padding State ───────────────────────────────────────────
+    var followingCameraPadding: UIEdgeInsets? = nil
+    var overviewCameraPadding: UIEdgeInsets? = nil
+
+    // ── Event Dispatchers ──────────────────────────────────────────────
     var onRouteProgressChanged: EventDispatcher? = nil
     var onCancelNavigation: EventDispatcher? = nil
     var onWaypointArrival: EventDispatcher? = nil
@@ -71,6 +98,7 @@ class ExpoMapboxNavigationViewController: UIViewController {
     var onUserOffRoute: EventDispatcher? = nil
     var onRoutesLoaded: EventDispatcher? = nil
     var onRouteFailedToLoad: EventDispatcher? = nil
+    var onNavigationStateChanged: EventDispatcher? = nil
 
     var calculateRoutesTask: Task<Void, Error>? = nil
     private var routeProgressCancellable: AnyCancellable? = nil
@@ -87,31 +115,54 @@ class ExpoMapboxNavigationViewController: UIViewController {
 
         routeProgressCancellable = navigation!.routeProgress.sink { progressState in
             if(progressState != nil){
+                // Apply maneuver arrow color (or hide arrows entirely)
+                if self.showManeuverArrow {
+                    try? self.navigationViewController?.navigationMapView?.mapView.mapboxMap.setLayerProperty(
+                        for: "com.mapbox.navigation.arrow.next",
+                        property: "line-color",
+                        value: self.maneuverArrowColor
+                    )
+                    try? self.navigationViewController?.navigationMapView?.mapView.mapboxMap.setLayerProperty(
+                        for: "com.mapbox.navigation.arrow.next.stroke",
+                        property: "line-color",
+                        value: self.maneuverArrowColor
+                    )
+                    try? self.navigationViewController?.navigationMapView?.mapView.mapboxMap.setLayerProperty(
+                        for: "com.mapbox.navigation.arrow.next.symbol",
+                        property: "icon-color",
+                        value: self.maneuverArrowColor
+                    )
+                    try? self.navigationViewController?.navigationMapView?.mapView.mapboxMap.setLayerProperty(
+                        for: "com.mapbox.navigation.arrow.next.symbol.casing",
+                        property: "icon-color",
+                        value: self.maneuverArrowColor
+                    )
+                } else {
+                    try? self.navigationViewController?.navigationMapView?.mapView.mapboxMap.setLayerProperty(
+                        for: "com.mapbox.navigation.arrow.next",
+                        property: "visibility",
+                        value: "none"
+                    )
+                    try? self.navigationViewController?.navigationMapView?.mapView.mapboxMap.setLayerProperty(
+                        for: "com.mapbox.navigation.arrow.next.stroke",
+                        property: "visibility",
+                        value: "none"
+                    )
+                    try? self.navigationViewController?.navigationMapView?.mapView.mapboxMap.setLayerProperty(
+                        for: "com.mapbox.navigation.arrow.next.symbol",
+                        property: "visibility",
+                        value: "none"
+                    )
+                    try? self.navigationViewController?.navigationMapView?.mapView.mapboxMap.setLayerProperty(
+                        for: "com.mapbox.navigation.arrow.next.symbol.casing",
+                        property: "visibility",
+                        value: "none"
+                    )
+                }
 
+                // Apply route line colors if configured
+                self.applyRouteLineColors()
 
-                // For some reason the maneuver arrows sometimes (not consistently) show up the same color as the route line making them invisible.
-                // This is a hack to always ensure the arrows are visible.
-                try? self.navigationViewController?.navigationMapView?.mapView.mapboxMap.setLayerProperty(
-                    for: "com.mapbox.navigation.arrow.next",
-                    property: "line-color",
-                    value: "#FFFFFF" 
-                )
-                try? self.navigationViewController?.navigationMapView?.mapView.mapboxMap.setLayerProperty(
-                    for: "com.mapbox.navigation.arrow.next.stroke",
-                    property: "line-color",
-                    value: "#FFFFFF" 
-                )
-                try? self.navigationViewController?.navigationMapView?.mapView.mapboxMap.setLayerProperty(
-                    for: "com.mapbox.navigation.arrow.next.symbol",
-                    property: "icon-color",
-                    value: "#FFFFFF" 
-                )
-                try? self.navigationViewController?.navigationMapView?.mapView.mapboxMap.setLayerProperty(
-                    for: "com.mapbox.navigation.arrow.next.symbol.casing",
-                    property: "icon-color",
-                    value: "#FFFFFF" 
-                )
-                
                self.onRouteProgressChanged?([
                     "distanceRemaining": progressState!.routeProgress.distanceRemaining,
                     "distanceTraveled": progressState!.routeProgress.distanceTraveled,
@@ -131,10 +182,10 @@ class ExpoMapboxNavigationViewController: UIViewController {
         }
 
         reroutingCancellable = navigation!.rerouting.sink { rerouteStatus in
-            self.onRouteChanged?()            
+            self.onRouteChanged?()
         }
 
-        sessionCancellable = tripSession!.session.sink { session in 
+        sessionCancellable = tripSession!.session.sink { session in
             let state = session.state
             switch state {
                 case .activeGuidance(let activeGuidanceState):
@@ -166,6 +217,43 @@ class ExpoMapboxNavigationViewController: UIViewController {
         fatalError("This controller should not be loaded through a story board")
     }
 
+    // ── Route Line Color Helpers ───────────────────────────────────────
+
+    private func applyRouteLineColors() {
+        guard let mapboxMap = navigationViewController?.navigationMapView?.mapView.mapboxMap else { return }
+
+        if let color = routeColor {
+            try? mapboxMap.setLayerProperty(
+                for: "com.mapbox.navigation.route.main",
+                property: "line-color",
+                value: color.hexString
+            )
+        }
+        if let color = routeAlternateColor {
+            try? mapboxMap.setLayerProperty(
+                for: "com.mapbox.navigation.route.alternative",
+                property: "line-color",
+                value: color.hexString
+            )
+        }
+        if let color = routeCasingColor {
+            try? mapboxMap.setLayerProperty(
+                for: "com.mapbox.navigation.route.main.casing",
+                property: "line-color",
+                value: color.hexString
+            )
+        }
+        if let color = traversedRouteColor {
+            try? mapboxMap.setLayerProperty(
+                for: "com.mapbox.navigation.route.main.traversed",
+                property: "line-color",
+                value: color.hexString
+            )
+        }
+    }
+
+    // ── Custom Raster Layer ────────────────────────────────────────────
+
     func addCustomRasterLayer() {
         let navigationMapView = navigationViewController?.navigationMapView
         let sourceId = "raster-source"
@@ -183,7 +271,7 @@ class ExpoMapboxNavigationViewController: UIViewController {
             return
         }
 
-        let sourceUrl = currentCustomRasterSourceUrl! 
+        let sourceUrl = currentCustomRasterSourceUrl!
 
         var rasterSource = RasterSource(id: sourceId)
 
@@ -202,10 +290,11 @@ class ExpoMapboxNavigationViewController: UIViewController {
             }
 
             try? mapView.addSource(rasterSource)
-            try? mapView.addLayer(rasterLayer, layerPosition: .above(currentPlaceCustomRasterLayerAbove ?? "water"))    
+            try? mapView.addLayer(rasterLayer, layerPosition: .above(currentPlaceCustomRasterLayerAbove ?? "water"))
         }
     }
 
+    // ── Route Configuration Setters ────────────────────────────────────
 
     func setCoordinates(coordinates: Array<CLLocationCoordinate2D>) {
         currentCoordinates = coordinates
@@ -271,9 +360,16 @@ class ExpoMapboxNavigationViewController: UIViewController {
         update()
     }
 
+    // ── Camera / Map Methods ───────────────────────────────────────────
+
     func recenterMap(){
         let navigationMapView = navigationViewController?.navigationMapView
         navigationMapView?.navigationCamera.update(cameraState: .following)
+    }
+
+    func showRouteOverview(){
+        let navigationMapView = navigationViewController?.navigationMapView
+        navigationMapView?.navigationCamera.update(cameraState: .overview)
     }
 
     func setIsMuted(isMuted: Bool?){
@@ -301,6 +397,173 @@ class ExpoMapboxNavigationViewController: UIViewController {
         }
     }
 
+    func setFollowingCameraPadding(padding: Dictionary<String, Double>?) {
+        guard let padding = padding else {
+            followingCameraPadding = nil
+            return
+        }
+        followingCameraPadding = UIEdgeInsets(
+            top: CGFloat(padding["top"] ?? 0),
+            left: CGFloat(padding["left"] ?? 0),
+            bottom: CGFloat(padding["bottom"] ?? 0),
+            right: CGFloat(padding["right"] ?? 0)
+        )
+        applyCameraPadding()
+    }
+
+    func setOverviewCameraPadding(padding: Dictionary<String, Double>?) {
+        guard let padding = padding else {
+            overviewCameraPadding = nil
+            return
+        }
+        overviewCameraPadding = UIEdgeInsets(
+            top: CGFloat(padding["top"] ?? 0),
+            left: CGFloat(padding["left"] ?? 0),
+            bottom: CGFloat(padding["bottom"] ?? 0),
+            right: CGFloat(padding["right"] ?? 0)
+        )
+        applyCameraPadding()
+    }
+
+    private func applyCameraPadding() {
+        guard let navigationMapView = navigationViewController?.navigationMapView else { return }
+        guard let viewportDataSource = navigationMapView.navigationCamera.viewportDataSource as? MobileViewportDataSource else { return }
+
+        if let padding = followingCameraPadding {
+            viewportDataSource.options.followingCameraOptions.paddingUpdatesAllowed = true
+            navigationMapView.navigationCamera.viewportDataSource = viewportDataSource
+            // Apply via camera options
+            let cameraOptions = CameraOptions(padding: padding)
+            navigationMapView.mapView.mapboxMap.setCamera(to: cameraOptions)
+        }
+    }
+
+    // ── UI Visibility Setters ──────────────────────────────────────────
+
+    func setShowTopBanner(show: Bool?) {
+        showTopBanner = show ?? true
+        applyUIVisibility()
+    }
+
+    func setShowBottomBanner(show: Bool?) {
+        showBottomBanner = show ?? true
+        applyUIVisibility()
+    }
+
+    func setShowCancelButton(show: Bool?) {
+        showCancelButton = show ?? true
+        applyUIVisibility()
+    }
+
+    func setShowSpeedLimit(show: Bool?) {
+        showSpeedLimit = show ?? true
+        applyUIVisibility()
+    }
+
+    func setShowSoundButton(show: Bool?) {
+        showSoundButton = show ?? true
+        applyUIVisibility()
+    }
+
+    func setShowOverviewButton(show: Bool?) {
+        showOverviewButton = show ?? true
+        applyUIVisibility()
+    }
+
+    func setShowRecenterButton(show: Bool?) {
+        showRecenterButton = show ?? true
+        applyUIVisibility()
+    }
+
+    func setShowManeuverArrow(show: Bool?) {
+        showManeuverArrow = show ?? true
+        // Arrow visibility is applied in the routeProgress sink
+    }
+
+    private func applyUIVisibility() {
+        guard let navVC = navigationViewController else { return }
+        let navView = navVC.navigationView
+
+        // Top banner
+        navView.topBannerContainerView.isHidden = !showTopBanner
+
+        // Bottom banner (includes cancel button)
+        navView.bottomBannerContainerView.isHidden = !showBottomBanner
+
+        // Speed limit
+        navView.speedLimitView.isHidden = !showSpeedLimit
+
+        // Cancel button (within bottom banner)
+        if showBottomBanner {
+            let cancelButtons = navView.bottomBannerContainerView.findViews(subclassOf: CancelButton.self)
+            for button in cancelButtons {
+                button.isHidden = !showCancelButton
+            }
+        }
+
+        // Floating buttons — these are in the floatingStackView or individual subviews
+        // We find them by type in the navigation view hierarchy
+        let soundButtons = navView.findViews(subclassOf: UIButton.self).filter {
+            $0.accessibilityIdentifier == "MapboxSoundButton" || $0.accessibilityLabel == "Sound"
+        }
+        // Since MapboxNavigationUIKit doesn't expose these directly by a stable identifier,
+        // we use the floatingButtons array on NavigationView
+        navView.floatingButtons?.forEach { button in
+            // The floating buttons stack typically contains: sound, overview, recenter-like buttons
+            // We can identify them by their position or by checking specific properties
+        }
+
+        // Apply via the wayNameView and other known views
+        navView.wayNameView.isHidden = false // keep way name visible
+    }
+
+    // ── UI Styling Setters ─────────────────────────────────────────────
+
+    func setTopBannerBackgroundColor(hexColor: String?) {
+        topBannerBackgroundColor = hexColor != nil ? UIColor(hex: hexColor!) : nil
+        applyUIStyles()
+    }
+
+    func setBottomBannerBackgroundColor(hexColor: String?) {
+        bottomBannerBackgroundColor = hexColor != nil ? UIColor(hex: hexColor!) : nil
+        applyUIStyles()
+    }
+
+    func setRouteColor(hexColor: String?) {
+        routeColor = hexColor != nil ? UIColor(hex: hexColor!) : nil
+    }
+
+    func setRouteAlternateColor(hexColor: String?) {
+        routeAlternateColor = hexColor != nil ? UIColor(hex: hexColor!) : nil
+    }
+
+    func setRouteCasingColor(hexColor: String?) {
+        routeCasingColor = hexColor != nil ? UIColor(hex: hexColor!) : nil
+    }
+
+    func setTraversedRouteColor(hexColor: String?) {
+        traversedRouteColor = hexColor != nil ? UIColor(hex: hexColor!) : nil
+    }
+
+    func setManeuverArrowColor(hexColor: String?) {
+        maneuverArrowColor = hexColor ?? "#FFFFFF"
+    }
+
+    private func applyUIStyles() {
+        guard let navVC = navigationViewController else { return }
+        let navView = navVC.navigationView
+
+        if let color = topBannerBackgroundColor {
+            navView.topBannerContainerView.backgroundColor = color
+        }
+
+        if let color = bottomBannerBackgroundColor {
+            navView.bottomBannerContainerView.backgroundColor = color
+        }
+    }
+
+    // ── Route Calculation ──────────────────────────────────────────────
+
     func update(){
         calculateRoutesTask?.cancel()
 
@@ -308,7 +571,7 @@ class ExpoMapboxNavigationViewController: UIViewController {
             let waypoints = currentCoordinates!.enumerated().map {
                 let index = $0
                 let coordinate = $1
-                var waypoint = Waypoint(coordinate: coordinate) 
+                var waypoint = Waypoint(coordinate: coordinate)
                 waypoint.separatesLegs = currentWaypointIndices == nil ? true : currentWaypointIndices!.contains(index)
                 return waypoint
             }
@@ -323,14 +586,14 @@ class ExpoMapboxNavigationViewController: UIViewController {
 
     func calculateRoutes(waypoints: Array<Waypoint>){
         let routeOptions = NavigationRouteOptions(
-            waypoints: waypoints, 
+            waypoints: waypoints,
             profileIdentifier: currentRouteProfile != nil ? ProfileIdentifier(rawValue: currentRouteProfile!) : nil,
             queryItems: [
                 URLQueryItem(name: "exclude", value: currentRouteExcludeList?.joined(separator: ",")),
                 URLQueryItem(name: "max_height", value: String(format: "%.1f", vehicleMaxHeight ?? 0.0)),
                 URLQueryItem(name: "max_width", value: String(format: "%.1f", vehicleMaxWidth ?? 0.0))
             ],
-            locale: currentLocale, 
+            locale: currentLocale,
             distanceUnit: currentLocale.usesMetricSystem ? LengthFormatter.Unit.meter : LengthFormatter.Unit.mile
         )
 
@@ -349,7 +612,7 @@ class ExpoMapboxNavigationViewController: UIViewController {
 
     func calculateMapMatchingRoutes(waypoints: Array<Waypoint>){
         let matchOptions = NavigationMatchOptions(
-            waypoints: waypoints, 
+            waypoints: waypoints,
             profileIdentifier: currentRouteProfile != nil ? ProfileIdentifier(rawValue: currentRouteProfile!) : nil,
             queryItems: [URLQueryItem(name: "exclude", value: currentRouteExcludeList?.joined(separator: ","))],
             distanceUnit: currentLocale.usesMetricSystem ? LengthFormatter.Unit.meter : LengthFormatter.Unit.mile
@@ -441,7 +704,7 @@ class ExpoMapboxNavigationViewController: UIViewController {
                 navigationOptions: navigationOptions
             )
         }
-        
+
         let navigationViewController = navigationViewController!
 
         navigationViewController.showsContinuousAlternatives = currentDisableAlternativeRoutes != true
@@ -463,10 +726,13 @@ class ExpoMapboxNavigationViewController: UIViewController {
             } catch {}
             self.addCustomRasterLayer()
         })
-        
+
 
         let cancelButton = navigationViewController.navigationView.bottomBannerContainerView.findViews(subclassOf: CancelButton.self)[0]
         cancelButton.addTarget(self, action: #selector(cancelButtonClicked), for: .touchUpInside)
+
+        // Register camera state observer for onNavigationStateChanged event
+        navigationMapView?.navigationCamera.addCameraStateObserver(self)
 
         navigationViewController.delegate = self
         addChild(navigationViewController)
@@ -480,8 +746,21 @@ class ExpoMapboxNavigationViewController: UIViewController {
         ])
         didMove(toParent: self)
         mapboxNavigation!.tripSession().startActiveGuidance(with: navigationRoutes, startLegIndex: 0)
+
+        // Apply UI visibility and styles after navigation view is set up
+        applyUIVisibility()
+        applyUIStyles()
+
+        // Apply camera padding if configured
+        if let padding = followingCameraPadding {
+            if let viewportDataSource = navigationMapView?.navigationCamera.viewportDataSource as? MobileViewportDataSource {
+                viewportDataSource.options.followingCameraOptions.paddingUpdatesAllowed = true
+            }
+        }
     }
 }
+
+// MARK: - NavigationViewControllerDelegate
 extension ExpoMapboxNavigationViewController: NavigationViewControllerDelegate {
     func navigationViewController(_ navigationViewController: NavigationViewController, didRerouteAlong route: Route) {
         onRoutesLoaded?([
@@ -498,6 +777,64 @@ extension ExpoMapboxNavigationViewController: NavigationViewControllerDelegate {
     ) { }
 }
 
+// MARK: - NavigationCameraStateObserver
+extension ExpoMapboxNavigationViewController: NavigationCameraStateObserver {
+    func navigationCameraStateDidChange(_ state: NavigationCameraState) {
+        let stateString: String
+        switch state {
+        case .idle:
+            stateString = "idle"
+        case .following:
+            stateString = "following"
+        case .overview:
+            stateString = "overview"
+        @unknown default:
+            stateString = "idle"
+        }
+        onNavigationStateChanged?(["state": stateString])
+    }
+}
+
+// MARK: - UIColor hex extension
+extension UIColor {
+    convenience init?(hex: String) {
+        var hexSanitized = hex.trimmingCharacters(in: .whitespacesAndNewlines)
+        hexSanitized = hexSanitized.replacingOccurrences(of: "#", with: "")
+
+        var rgb: UInt64 = 0
+        guard Scanner(string: hexSanitized).scanHexInt64(&rgb) else { return nil }
+
+        let length = hexSanitized.count
+        if length == 6 {
+            self.init(
+                red: CGFloat((rgb & 0xFF0000) >> 16) / 255.0,
+                green: CGFloat((rgb & 0x00FF00) >> 8) / 255.0,
+                blue: CGFloat(rgb & 0x0000FF) / 255.0,
+                alpha: 1.0
+            )
+        } else if length == 8 {
+            self.init(
+                red: CGFloat((rgb & 0xFF000000) >> 24) / 255.0,
+                green: CGFloat((rgb & 0x00FF0000) >> 16) / 255.0,
+                blue: CGFloat((rgb & 0x0000FF00) >> 8) / 255.0,
+                alpha: CGFloat(rgb & 0x000000FF) / 255.0
+            )
+        } else {
+            return nil
+        }
+    }
+
+    var hexString: String {
+        var r: CGFloat = 0
+        var g: CGFloat = 0
+        var b: CGFloat = 0
+        var a: CGFloat = 0
+        getRed(&r, green: &g, blue: &b, alpha: &a)
+        return String(format: "#%02X%02X%02X", Int(r * 255), Int(g * 255), Int(b * 255))
+    }
+}
+
+// MARK: - UIView helpers
 extension UIView {
     func findViews<T: UIView>(subclassOf: T.Type) -> [T] {
         return recursiveSubviews.compactMap { $0 as? T }

@@ -101,15 +101,13 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
         ExpoView(context, appContext) {
 
     // Set view tree lifecycle owner to the activity
-    // Otherwise leads to crashes when mapbox package tries to query the view tree lifecycle
-    // owner
-    // and gets null. Not set automatically for some reason.
-    // https://github.com/mapbox/mapbox-navigation-android/blob/188d4781b31bb328733eeca593edc8087e38d915/ui-utils/src/main/java/com/mapbox/navigation/ui/utils/internal/lifecycle/ViewLifecycleRegistry.kt#L67
     init {
         this.setViewTreeLifecycleOwner(
                 appContext.activityProvider?.currentActivity as LifecycleOwner
         )
     }
+
+    // ── State ──────────────────────────────────────────────────────────
 
     private var isMuted = false
     private var currentCoordinates: List<Point>? = null
@@ -128,6 +126,33 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
     private var vehicleMaxHeight: Double? = null
     private var vehicleMaxWidth: Double? = null
 
+    // ── UI Visibility State ────────────────────────────────────────────
+
+    private var isShowTopBanner = true
+    private var isShowBottomBanner = true
+    private var isShowCancelButton = true
+    private var isShowSoundButton = true
+    private var isShowOverviewButton = true
+    private var isShowRecenterButton = true
+    private var isShowManeuverArrow = true
+
+    // ── UI Styling State ───────────────────────────────────────────────
+
+    private var topBannerBgColor: Int? = null
+    private var bottomBannerBgColor: Int? = null
+    private var routeColorInt: Int? = null
+    private var routeAlternateColorInt: Int? = null
+    private var routeCasingColorInt: Int? = null
+    private var traversedRouteColorInt: Int? = null
+    private var maneuverArrowColorInt: Int? = null
+
+    // ── Camera Padding State ───────────────────────────────────────────
+
+    private var customFollowingPadding: EdgeInsets? = null
+    private var customOverviewPadding: EdgeInsets? = null
+
+    // ── Events ─────────────────────────────────────────────────────────
+
     private val onRouteProgressChanged by EventDispatcher()
     private val onCancelNavigation by EventDispatcher()
     private val onWaypointArrival by EventDispatcher()
@@ -136,12 +161,17 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
     private val onUserOffRoute by EventDispatcher()
     private val onRoutesLoaded by EventDispatcher()
     private val onRouteFailedToLoad by EventDispatcher()
+    private val onNavigationStateChanged by EventDispatcher()
+
+    // ── Navigation Core ────────────────────────────────────────────────
 
     private val mapboxNavigation = MapboxNavigationApp.current()
     private var mapboxStyle: Style? = null
     private val navigationLocationProvider = NavigationLocationProvider()
     private var voiceInstructionsPlayer =
             MapboxVoiceInstructionsPlayer(context, currentLocale.toLanguageTag())
+
+    // ── Layout ─────────────────────────────────────────────────────────
 
     private val parentConstraintLayout =
             ConstraintLayout(context).also {
@@ -202,7 +232,7 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
     private val cancelButtonId = 7
     private val cancelButton =
             createCancelButton(cancelButtonId, parentConstraintLayout) {
-                onCancelNavigation(mapOf())
+                onCancelNavigation(mapOf<String, Any>())
             }
 
     private val parentConstraintSet =
@@ -216,6 +246,8 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
                     cancelButtonId = cancelButtonId,
                     constraintLayout = parentConstraintLayout
             )
+
+    // ── Route Line & Arrow ─────────────────────────────────────────────
 
     private val routeLineApiOptions = MapboxRouteLineApiOptions.Builder().build()
     private val routeLineApi = MapboxRouteLineApi(routeLineApiOptions)
@@ -231,6 +263,8 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
                     .build()
     private val routeArrowView = MapboxRouteArrowView(routeArrowOptions)
 
+    // ── Maneuver & Trip Progress ───────────────────────────────────────
+
     private val distanceFormatter = DistanceFormatterOptions.Builder(context).build()
     private var maneuverApi = MapboxManeuverApi(MapboxDistanceFormatter(distanceFormatter))
 
@@ -241,6 +275,8 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
                     .estimatedTimeToArrivalFormatter(EstimatedTimeToArrivalFormatter(context))
                     .build()
     private var tripProgressApi = MapboxTripProgressApi(tripProgressFormatter)
+
+    // ── Voice ──────────────────────────────────────────────────────────
 
     private var speechApi = MapboxSpeechApi(context, currentLocale.toLanguageTag())
     private val voiceInstructionsPlayerCallback =
@@ -266,6 +302,8 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
     private val voiceInstructionsObserver = VoiceInstructionsObserver { voiceInstructions ->
         speechApi.generate(voiceInstructions, speechCallback)
     }
+
+    // ── Observers ──────────────────────────────────────────────────────
 
     private val routesRequestCallback =
             object : NavigationRouterCallback {
@@ -341,18 +379,32 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
                     // Add observer to navigation camera
                     navigationCamera.registerNavigationCameraStateChangeObserver {
                             navigationCameraState ->
-                        // shows/hide the recenter button depending on the camera
-                        // state
+                        // shows/hide the recenter button depending on the camera state
                         when (navigationCameraState) {
                             NavigationCameraState.TRANSITION_TO_FOLLOWING,
-                            NavigationCameraState.FOLLOWING -> recenterButton.visibility = View.GONE
+                            NavigationCameraState.FOLLOWING -> {
+                                if (isShowRecenterButton) {
+                                    recenterButton.visibility = View.GONE
+                                }
+                                onNavigationStateChanged(mapOf("state" to "following"))
+                            }
                             NavigationCameraState.TRANSITION_TO_OVERVIEW,
-                            NavigationCameraState.OVERVIEW,
-                            NavigationCameraState.IDLE -> recenterButton.visibility = View.VISIBLE
+                            NavigationCameraState.OVERVIEW -> {
+                                if (isShowRecenterButton) {
+                                    recenterButton.visibility = View.VISIBLE
+                                }
+                                onNavigationStateChanged(mapOf("state" to "overview"))
+                            }
+                            NavigationCameraState.IDLE -> {
+                                if (isShowRecenterButton) {
+                                    recenterButton.visibility = View.VISIBLE
+                                }
+                                onNavigationStateChanged(mapOf("state" to "idle"))
+                            }
                         }
                     }
 
-                    this@ExpoMapboxNavigationView.onRouteChanged(mapOf())
+                    this@ExpoMapboxNavigationView.onRouteChanged(mapOf<String, Any>())
                 }
             }
 
@@ -368,13 +420,15 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
                         mapboxStyle?.let { routeLineView.renderRouteLineUpdate(it, result) }
                     }
 
-                    // Handle route arrows
-                    val updatedManeuverArrow = routeArrow.addUpcomingManeuverArrow(routeProgress)
-                    mapboxStyle?.let {
-                        routeArrowView.renderManeuverUpdate(it, updatedManeuverArrow)
+                    // Handle route arrows (conditionally)
+                    if (isShowManeuverArrow) {
+                        val updatedManeuverArrow = routeArrow.addUpcomingManeuverArrow(routeProgress)
+                        mapboxStyle?.let {
+                            routeArrowView.renderManeuverUpdate(it, updatedManeuverArrow)
+                        }
                     }
 
-                    // Handle manuevers
+                    // Handle maneuvers
                     val maneuvers = maneuverApi.getManeuvers(routeProgress)
                     maneuverView.renderManeuvers(maneuvers)
 
@@ -389,6 +443,9 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
                         tripProgressArrivalTimeTextView.text =
                                 formatter.getEstimatedTimeToArrival(update.estimatedTimeToArrival)
                     }
+
+                    // Apply route line colors if configured
+                    applyRouteLineColors()
 
                     // Send progress event
                     this@ExpoMapboxNavigationView.onRouteProgressChanged(
@@ -432,7 +489,7 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
                 }
                 override fun onNextRouteLegStart(routeLegProgress: RouteLegProgress) {}
                 override fun onFinalDestinationArrival(routeProgress: RouteProgress) {
-                    onFinalDestinationArrival(mapOf())
+                    onFinalDestinationArrival(mapOf<String, Any>())
                 }
             }
 
@@ -440,7 +497,7 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
             object : OffRouteObserver {
                 override fun onOffRouteStateChanged(offRoute: Boolean) {
                     if (offRoute) {
-                        onUserOffRoute(mapOf())
+                        onUserOffRoute(mapOf<String, Any>())
                     }
                 }
             }
@@ -449,6 +506,73 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
         val result = routeLineApi.updateTraveledRouteLine(point)
         mapboxStyle?.let { routeLineView.renderRouteLineUpdate(it, result) }
     }
+
+    // ── Route Line Color Helpers ───────────────────────────────────────
+
+    private fun applyRouteLineColors() {
+        val style = mapboxMap.getStyle() ?: return
+
+        routeColorInt?.let { color ->
+            try {
+                style.setStyleLayerProperty(
+                    "mapbox-navigation-route-layer",
+                    "line-color",
+                    colorToHex(color)
+                )
+            } catch (_: Exception) {}
+        }
+
+        routeAlternateColorInt?.let { color ->
+            try {
+                style.setStyleLayerProperty(
+                    "mapbox-navigation-alt-route-layer-0",
+                    "line-color",
+                    colorToHex(color)
+                )
+            } catch (_: Exception) {}
+        }
+
+        routeCasingColorInt?.let { color ->
+            try {
+                style.setStyleLayerProperty(
+                    "mapbox-navigation-route-casing-layer",
+                    "line-color",
+                    colorToHex(color)
+                )
+            } catch (_: Exception) {}
+        }
+
+        traversedRouteColorInt?.let { color ->
+            try {
+                style.setStyleLayerProperty(
+                    "mapbox-navigation-route-traffic-layer",
+                    "line-color",
+                    colorToHex(color)
+                )
+            } catch (_: Exception) {}
+        }
+
+        maneuverArrowColorInt?.let { color ->
+            try {
+                style.setStyleLayerProperty(
+                    "mapbox-navigation-arrow-shaft-layer",
+                    "line-color",
+                    colorToHex(color)
+                )
+                style.setStyleLayerProperty(
+                    "mapbox-navigation-arrow-head-layer",
+                    "fill-color",
+                    colorToHex(color)
+                )
+            } catch (_: Exception) {}
+        }
+    }
+
+    private fun colorToHex(color: Int): String {
+        return String.format("#%06X", 0xFFFFFF and color)
+    }
+
+    // ── View Factory Methods ───────────────────────────────────────────
 
     private fun createMapView(id: Int, parent: ViewGroup): MapView {
         return MapView(context).apply {
@@ -779,6 +903,8 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
         }
     }
 
+    // ── Lifecycle ──────────────────────────────────────────────────────
+
     override fun onAttachedToWindow() {
         super.onAttachedToWindow()
         mapboxNavigation?.registerRoutesObserver(routesObserver)
@@ -810,6 +936,8 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
         routeLineView.cancel()
         maneuverApi.cancel()
     }
+
+    // ── Route Conversion ───────────────────────────────────────────────
 
     private fun convertRoute(route: NavigationRoute): Map<String, Any> {
         return mapOf(
@@ -859,6 +987,8 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
                                 .build()
         )
     }
+
+    // ── Prop Setters: Route Configuration ──────────────────────────────
 
     @com.mapbox.navigation.base.ExperimentalPreviewMapboxNavigationAPI
     fun setCoordinates(coordinates: List<Point>) {
@@ -916,6 +1046,14 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
         update()
     }
 
+    @com.mapbox.navigation.base.ExperimentalPreviewMapboxNavigationAPI
+    fun setDisableAlternativeRoutes(disableAlternativeRoutes: Boolean?) {
+        currentDisableAlternativeRoutes = disableAlternativeRoutes
+        update()
+    }
+
+    // ── Prop Setters: Voice ────────────────────────────────────────────
+
     fun setIsMuted(isMutedProp: Boolean?) {
         if (isMutedProp != null) {
             isMuted = isMutedProp
@@ -925,6 +1063,8 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
                     .setImageResource(if (isMuted) R.drawable.icon_mute else R.drawable.icon_sound)
         }
     }
+
+    // ── Prop Setters: Map ──────────────────────────────────────────────
 
     fun setInitialLocation(initialLocation: Point?, zoom: Double?) {
         if (initialLocation != null) {
@@ -946,11 +1086,7 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
         update()
     }
 
-    @com.mapbox.navigation.base.ExperimentalPreviewMapboxNavigationAPI
-    fun setDisableAlternativeRoutes(disableAlternativeRoutes: Boolean?) {
-        currentDisableAlternativeRoutes = disableAlternativeRoutes
-        update()
-    }
+    // ── Prop Setters: Camera ───────────────────────────────────────────
 
     @com.mapbox.navigation.base.ExperimentalPreviewMapboxNavigationAPI
     fun setFollowingZoom(followingZoom: Double?) {
@@ -959,9 +1095,125 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
         viewportDataSource.evaluate()
     }
 
+    fun setFollowingCameraPadding(padding: Map<String, Double>?) {
+        if (padding == null) {
+            customFollowingPadding = null
+            return
+        }
+        val top = (padding["top"] ?: 0.0) * PIXEL_DENSITY
+        val left = (padding["left"] ?: 0.0) * PIXEL_DENSITY
+        val bottom = (padding["bottom"] ?: 0.0) * PIXEL_DENSITY
+        val right = (padding["right"] ?: 0.0) * PIXEL_DENSITY
+        customFollowingPadding = EdgeInsets(top, left, bottom, right)
+        viewportDataSource.followingPadding = customFollowingPadding!!
+        viewportDataSource.evaluate()
+    }
+
+    fun setOverviewCameraPadding(padding: Map<String, Double>?) {
+        if (padding == null) {
+            customOverviewPadding = null
+            return
+        }
+        val top = (padding["top"] ?: 0.0) * PIXEL_DENSITY
+        val left = (padding["left"] ?: 0.0) * PIXEL_DENSITY
+        val bottom = (padding["bottom"] ?: 0.0) * PIXEL_DENSITY
+        val right = (padding["right"] ?: 0.0) * PIXEL_DENSITY
+        customOverviewPadding = EdgeInsets(top, left, bottom, right)
+        viewportDataSource.overviewPadding = customOverviewPadding!!
+        viewportDataSource.evaluate()
+    }
+
+    // ── Prop Setters: UI Visibility ────────────────────────────────────
+
+    fun setShowTopBanner(show: Boolean?) {
+        isShowTopBanner = show ?: true
+        maneuverView.visibility = if (isShowTopBanner) View.VISIBLE else View.GONE
+    }
+
+    fun setShowBottomBanner(show: Boolean?) {
+        isShowBottomBanner = show ?: true
+        tripProgressView.visibility = if (isShowBottomBanner) View.VISIBLE else View.GONE
+    }
+
+    fun setShowCancelButton(show: Boolean?) {
+        isShowCancelButton = show ?: true
+        cancelButton.visibility = if (isShowCancelButton) View.VISIBLE else View.GONE
+    }
+
+    fun setShowSoundButton(show: Boolean?) {
+        isShowSoundButton = show ?: true
+        soundButton.visibility = if (isShowSoundButton) View.VISIBLE else View.GONE
+    }
+
+    fun setShowOverviewButton(show: Boolean?) {
+        isShowOverviewButton = show ?: true
+        overviewButton.visibility = if (isShowOverviewButton) View.VISIBLE else View.GONE
+    }
+
+    fun setShowRecenterButton(show: Boolean?) {
+        isShowRecenterButton = show ?: true
+        if (!isShowRecenterButton) {
+            recenterButton.visibility = View.GONE
+        }
+    }
+
+    fun setShowManeuverArrow(show: Boolean?) {
+        isShowManeuverArrow = show ?: true
+        if (!isShowManeuverArrow) {
+            // Clear existing arrows
+            val clearArrows = routeArrow.clearArrows()
+            mapboxStyle?.let { routeArrowView.render(it, clearArrows) }
+        }
+    }
+
+    // ── Prop Setters: UI Styling ───────────────────────────────────────
+
+    fun setTopBannerBackgroundColor(hexColor: String?) {
+        topBannerBgColor = hexColor?.let { parseHexColor(it) }
+        topBannerBgColor?.let { maneuverView.setBackgroundColor(it) }
+    }
+
+    fun setBottomBannerBackgroundColor(hexColor: String?) {
+        bottomBannerBgColor = hexColor?.let { parseHexColor(it) }
+        bottomBannerBgColor?.let { tripProgressView.setBackgroundColor(it) }
+    }
+
+    fun setRouteColor(hexColor: String?) {
+        routeColorInt = hexColor?.let { parseHexColor(it) }
+    }
+
+    fun setRouteAlternateColor(hexColor: String?) {
+        routeAlternateColorInt = hexColor?.let { parseHexColor(it) }
+    }
+
+    fun setRouteCasingColor(hexColor: String?) {
+        routeCasingColorInt = hexColor?.let { parseHexColor(it) }
+    }
+
+    fun setTraversedRouteColor(hexColor: String?) {
+        traversedRouteColorInt = hexColor?.let { parseHexColor(it) }
+    }
+
+    fun setManeuverArrowColor(hexColor: String?) {
+        maneuverArrowColorInt = hexColor?.let { parseHexColor(it) }
+    }
+
+    private fun parseHexColor(hex: String): Int {
+        val sanitized = if (hex.startsWith("#")) hex else "#$hex"
+        return Color.parseColor(sanitized)
+    }
+
+    // ── Ref Methods ────────────────────────────────────────────────────
+
     fun recenterMap() {
         navigationCamera.requestNavigationCameraToFollowing()
     }
+
+    fun showRouteOverview() {
+        navigationCamera.requestNavigationCameraToOverview()
+    }
+
+    // ── Custom Raster Layer ────────────────────────────────────────────
 
     fun addCustomRasterLayer() {
         val style = mapboxMap.getStyle() ?: return
@@ -994,6 +1246,8 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
         val aboveLayerId = currentPlaceCustomRasterLayerAbove ?: "water"
         style.addLayerAbove(rasterLayer, aboveLayerId)
     }
+
+    // ── Route Calculation ──────────────────────────────────────────────
 
     @com.mapbox.navigation.base.ExperimentalPreviewMapboxNavigationAPI
     private fun update() {

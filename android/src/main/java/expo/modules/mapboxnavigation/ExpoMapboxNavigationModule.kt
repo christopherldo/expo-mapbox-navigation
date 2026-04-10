@@ -38,8 +38,11 @@ class ExpoMapboxNavigationModule : Module() {
               "onRouteChanged",
               "onUserOffRoute",
               "onRoutesLoaded",
-              "onRouteFailedToLoad"
+              "onRouteFailedToLoad",
+              "onNavigationStateChanged"
       )
+
+      // ── Route Configuration ──────────────────────────────────────
 
       Prop("coordinates") { view: ExpoMapboxNavigationView, coordinates: List<Map<String, Any>> ->
         val points = mutableListOf<Point>()
@@ -81,9 +84,15 @@ class ExpoMapboxNavigationModule : Module() {
         view.setRouteExcludeList(excludeList)
       }
 
-      Prop("mapStyle") { view: ExpoMapboxNavigationView, style: String? -> view.setMapStyle(style) }
+      Prop("disableAlternativeRoutes") {
+              view: ExpoMapboxNavigationView,
+              disableAlternativeRoutes: Boolean? ->
+        view.setDisableAlternativeRoutes(disableAlternativeRoutes)
+      }
 
-      Prop("mute") { view: ExpoMapboxNavigationView, isMuted: Boolean? -> view.setIsMuted(isMuted) }
+      // ── Map Configuration ────────────────────────────────────────
+
+      Prop("mapStyle") { view: ExpoMapboxNavigationView, style: String? -> view.setMapStyle(style) }
 
       Prop("initialLocation") { view: ExpoMapboxNavigationView, initialLocation: Map<String, Any>?
         ->
@@ -104,17 +113,93 @@ class ExpoMapboxNavigationModule : Module() {
         view.setPlaceCustomRasterLayerAbove(layerId)
       }
 
-      Prop("disableAlternativeRoutes") {
-              view: ExpoMapboxNavigationView,
-              disableAlternativeRoutes: Boolean? ->
-        view.setDisableAlternativeRoutes(disableAlternativeRoutes)
-      }
+      // ── Voice Configuration ──────────────────────────────────────
+
+      Prop("mute") { view: ExpoMapboxNavigationView, isMuted: Boolean? -> view.setIsMuted(isMuted) }
+
+      // ── Camera Configuration ─────────────────────────────────────
 
       Prop("followingZoom") { view: ExpoMapboxNavigationView, followingZoom: Double? ->
         view.setFollowingZoom(followingZoom)
       }
 
+      Prop("followingCameraPadding") { view: ExpoMapboxNavigationView, padding: Map<String, Double>? ->
+        view.setFollowingCameraPadding(padding)
+      }
+
+      Prop("overviewCameraPadding") { view: ExpoMapboxNavigationView, padding: Map<String, Double>? ->
+        view.setOverviewCameraPadding(padding)
+      }
+
+      // ── UI Visibility ────────────────────────────────────────────
+
+      Prop("showTopBanner") { view: ExpoMapboxNavigationView, show: Boolean? ->
+        view.setShowTopBanner(show)
+      }
+
+      Prop("showBottomBanner") { view: ExpoMapboxNavigationView, show: Boolean? ->
+        view.setShowBottomBanner(show)
+      }
+
+      Prop("showCancelButton") { view: ExpoMapboxNavigationView, show: Boolean? ->
+        view.setShowCancelButton(show)
+      }
+
+      Prop("showSpeedLimit") { view: ExpoMapboxNavigationView, show: Boolean? ->
+        // No-op on Android — no built-in speed limit view in this implementation
+      }
+
+      Prop("showSoundButton") { view: ExpoMapboxNavigationView, show: Boolean? ->
+        view.setShowSoundButton(show)
+      }
+
+      Prop("showOverviewButton") { view: ExpoMapboxNavigationView, show: Boolean? ->
+        view.setShowOverviewButton(show)
+      }
+
+      Prop("showRecenterButton") { view: ExpoMapboxNavigationView, show: Boolean? ->
+        view.setShowRecenterButton(show)
+      }
+
+      Prop("showManeuverArrow") { view: ExpoMapboxNavigationView, show: Boolean? ->
+        view.setShowManeuverArrow(show)
+      }
+
+      // ── UI Styling ───────────────────────────────────────────────
+
+      Prop("topBannerBackgroundColor") { view: ExpoMapboxNavigationView, color: String? ->
+        view.setTopBannerBackgroundColor(color)
+      }
+
+      Prop("bottomBannerBackgroundColor") { view: ExpoMapboxNavigationView, color: String? ->
+        view.setBottomBannerBackgroundColor(color)
+      }
+
+      Prop("routeColor") { view: ExpoMapboxNavigationView, color: String? ->
+        view.setRouteColor(color)
+      }
+
+      Prop("routeAlternateColor") { view: ExpoMapboxNavigationView, color: String? ->
+        view.setRouteAlternateColor(color)
+      }
+
+      Prop("routeCasingColor") { view: ExpoMapboxNavigationView, color: String? ->
+        view.setRouteCasingColor(color)
+      }
+
+      Prop("traversedRouteColor") { view: ExpoMapboxNavigationView, color: String? ->
+        view.setTraversedRouteColor(color)
+      }
+
+      Prop("maneuverArrowColor") { view: ExpoMapboxNavigationView, color: String? ->
+        view.setManeuverArrowColor(color)
+      }
+
+      // ── Ref Methods ──────────────────────────────────────────────
+
       AsyncFunction("recenterMap") { view: ExpoMapboxNavigationView -> view.recenterMap() }
+
+      AsyncFunction("showRouteOverview") { view: ExpoMapboxNavigationView -> view.showRouteOverview() }
     }
   }
 }

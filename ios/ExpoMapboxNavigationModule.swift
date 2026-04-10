@@ -7,7 +7,19 @@ public class ExpoMapboxNavigationModule: Module {
     Name("ExpoMapboxNavigation")
 
     View(ExpoMapboxNavigationView.self) {
-      Events("onRouteProgressChanged", "onCancelNavigation", "onWaypointArrival", "onFinalDestinationArrival", "onRouteChanged", "onUserOffRoute", "onRoutesLoaded", "onRouteFailedToLoad")
+      Events(
+        "onRouteProgressChanged",
+        "onCancelNavigation",
+        "onWaypointArrival",
+        "onFinalDestinationArrival",
+        "onRouteChanged",
+        "onUserOffRoute",
+        "onRoutesLoaded",
+        "onRouteFailedToLoad",
+        "onNavigationStateChanged"
+      )
+
+      // ── Route Configuration ──────────────────────────────────────
 
       Prop("coordinates") { (view: ExpoMapboxNavigationView, coordinates: Array<Dictionary<String, Any>>) in
          var points: Array<CLLocationCoordinate2D> = []
@@ -49,12 +61,14 @@ public class ExpoMapboxNavigationModule: Module {
           view.controller.setRouteExcludeList(excludeList: excludeList)
       }
 
-      Prop("mapStyle"){ (view: ExpoMapboxNavigationView, style: String?) in
-          view.controller.setMapStyle(style: style)
+      Prop("disableAlternativeRoutes") { (view: ExpoMapboxNavigationView, disableAlternativeRoutes: Bool?) in
+        view.controller.setDisableAlternativeRoutes(disableAlternativeRoutes: disableAlternativeRoutes)
       }
 
-      Prop("mute"){ (view: ExpoMapboxNavigationView, isMuted: Bool?) in
-          view.controller.setIsMuted(isMuted: isMuted)
+      // ── Map Configuration ────────────────────────────────────────
+
+      Prop("mapStyle"){ (view: ExpoMapboxNavigationView, style: String?) in
+          view.controller.setMapStyle(style: style)
       }
 
       Prop("initialLocation") { (view: ExpoMapboxNavigationView, location: Dictionary<String, Any>?) in
@@ -76,16 +90,98 @@ public class ExpoMapboxNavigationModule: Module {
         view.controller.setPlaceCustomRasterLayerAbove(layerId: layerId)
       }
 
-      Prop("disableAlternativeRoutes") { (view: ExpoMapboxNavigationView, disableAlternativeRoutes: Bool?) in
-        view.controller.setDisableAlternativeRoutes(disableAlternativeRoutes: disableAlternativeRoutes)
+      // ── Voice Configuration ──────────────────────────────────────
+
+      Prop("mute"){ (view: ExpoMapboxNavigationView, isMuted: Bool?) in
+          view.controller.setIsMuted(isMuted: isMuted)
       }
+
+      // ── Camera Configuration ─────────────────────────────────────
 
       Prop("followingZoom") { (view: ExpoMapboxNavigationView, followingZoom: Double?) in
         view.controller.setFollowingZoom(followingZoom: followingZoom)
       }
 
+      Prop("followingCameraPadding") { (view: ExpoMapboxNavigationView, padding: Dictionary<String, Double>?) in
+        view.controller.setFollowingCameraPadding(padding: padding)
+      }
+
+      Prop("overviewCameraPadding") { (view: ExpoMapboxNavigationView, padding: Dictionary<String, Double>?) in
+        view.controller.setOverviewCameraPadding(padding: padding)
+      }
+
+      // ── UI Visibility ────────────────────────────────────────────
+
+      Prop("showTopBanner") { (view: ExpoMapboxNavigationView, show: Bool?) in
+        view.controller.setShowTopBanner(show: show)
+      }
+
+      Prop("showBottomBanner") { (view: ExpoMapboxNavigationView, show: Bool?) in
+        view.controller.setShowBottomBanner(show: show)
+      }
+
+      Prop("showCancelButton") { (view: ExpoMapboxNavigationView, show: Bool?) in
+        view.controller.setShowCancelButton(show: show)
+      }
+
+      Prop("showSpeedLimit") { (view: ExpoMapboxNavigationView, show: Bool?) in
+        view.controller.setShowSpeedLimit(show: show)
+      }
+
+      Prop("showSoundButton") { (view: ExpoMapboxNavigationView, show: Bool?) in
+        view.controller.setShowSoundButton(show: show)
+      }
+
+      Prop("showOverviewButton") { (view: ExpoMapboxNavigationView, show: Bool?) in
+        view.controller.setShowOverviewButton(show: show)
+      }
+
+      Prop("showRecenterButton") { (view: ExpoMapboxNavigationView, show: Bool?) in
+        view.controller.setShowRecenterButton(show: show)
+      }
+
+      Prop("showManeuverArrow") { (view: ExpoMapboxNavigationView, show: Bool?) in
+        view.controller.setShowManeuverArrow(show: show)
+      }
+
+      // ── UI Styling ───────────────────────────────────────────────
+
+      Prop("topBannerBackgroundColor") { (view: ExpoMapboxNavigationView, color: String?) in
+        view.controller.setTopBannerBackgroundColor(hexColor: color)
+      }
+
+      Prop("bottomBannerBackgroundColor") { (view: ExpoMapboxNavigationView, color: String?) in
+        view.controller.setBottomBannerBackgroundColor(hexColor: color)
+      }
+
+      Prop("routeColor") { (view: ExpoMapboxNavigationView, color: String?) in
+        view.controller.setRouteColor(hexColor: color)
+      }
+
+      Prop("routeAlternateColor") { (view: ExpoMapboxNavigationView, color: String?) in
+        view.controller.setRouteAlternateColor(hexColor: color)
+      }
+
+      Prop("routeCasingColor") { (view: ExpoMapboxNavigationView, color: String?) in
+        view.controller.setRouteCasingColor(hexColor: color)
+      }
+
+      Prop("traversedRouteColor") { (view: ExpoMapboxNavigationView, color: String?) in
+        view.controller.setTraversedRouteColor(hexColor: color)
+      }
+
+      Prop("maneuverArrowColor") { (view: ExpoMapboxNavigationView, color: String?) in
+        view.controller.setManeuverArrowColor(hexColor: color)
+      }
+
+      // ── Ref Methods ──────────────────────────────────────────────
+
       AsyncFunction("recenterMap") { (view: ExpoMapboxNavigationView) in
         view.controller.recenterMap()
+      }
+
+      AsyncFunction("showRouteOverview") { (view: ExpoMapboxNavigationView) in
+        view.controller.showRouteOverview()
       }
     }
   }
