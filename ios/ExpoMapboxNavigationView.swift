@@ -105,7 +105,6 @@ class ExpoMapboxNavigationViewController: UIViewController {
     private var waypointArrivalCancellable: AnyCancellable? = nil
     private var reroutingCancellable: AnyCancellable? = nil
     private var sessionCancellable: AnyCancellable? = nil
-    private var cameraStateCancellable: AnyCancellable? = nil
 
     init() {
         super.init(nibName: nil, bundle: nil)
@@ -206,7 +205,6 @@ class ExpoMapboxNavigationViewController: UIViewController {
         waypointArrivalCancellable?.cancel()
         reroutingCancellable?.cancel()
         sessionCancellable?.cancel()
-        cameraStateCancellable?.cancel()
     }
 
     override func viewDidDisappear(_ animated: Bool) {
@@ -367,11 +365,13 @@ class ExpoMapboxNavigationViewController: UIViewController {
     func recenterMap(){
         let navigationMapView = navigationViewController?.navigationMapView
         navigationMapView?.navigationCamera.update(cameraState: .following)
+        onNavigationStateChanged?(["state": "following"])
     }
 
     func showRouteOverview(){
         let navigationMapView = navigationViewController?.navigationMapView
         navigationMapView?.navigationCamera.update(cameraState: .overview)
+        onNavigationStateChanged?(["state": "overview"])
     }
 
     func setIsMuted(isMuted: Bool?){
@@ -719,24 +719,6 @@ class ExpoMapboxNavigationViewController: UIViewController {
 
         let cancelButton = navigationViewController.navigationView.bottomBannerContainerView.findViews(subclassOf: CancelButton.self)[0]
         cancelButton.addTarget(self, action: #selector(cancelButtonClicked), for: .touchUpInside)
-
-        // Observe camera state changes via Combine
-        cameraStateCancellable?.cancel()
-        cameraStateCancellable = navigationMapView?.navigationCamera.$state.sink { [weak self] state in
-            guard let self = self else { return }
-            let stateString: String
-            switch state {
-            case .idle:
-                stateString = "idle"
-            case .following:
-                stateString = "following"
-            case .overview:
-                stateString = "overview"
-            @unknown default:
-                stateString = "idle"
-            }
-            self.onNavigationStateChanged?(["state": stateString])
-        }
 
         navigationViewController.delegate = self
         addChild(navigationViewController)
