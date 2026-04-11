@@ -16,6 +16,7 @@ import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.setViewTreeLifecycleOwner
 import com.mapbox.api.directions.v5.models.RouteOptions
 import com.mapbox.bindgen.Expected
+import com.mapbox.bindgen.Value
 import com.mapbox.common.location.Location
 import com.mapbox.geojson.Point
 import com.mapbox.geojson.utils.PolylineUtils
@@ -517,7 +518,7 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
                 style.setStyleLayerProperty(
                     "mapbox-navigation-route-layer",
                     "line-color",
-                    colorToHex(color)
+                    Value.valueOf(colorToHex(color))
                 )
             } catch (_: Exception) {}
         }
@@ -527,7 +528,7 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
                 style.setStyleLayerProperty(
                     "mapbox-navigation-alt-route-layer-0",
                     "line-color",
-                    colorToHex(color)
+                    Value.valueOf(colorToHex(color))
                 )
             } catch (_: Exception) {}
         }
@@ -537,7 +538,7 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
                 style.setStyleLayerProperty(
                     "mapbox-navigation-route-casing-layer",
                     "line-color",
-                    colorToHex(color)
+                    Value.valueOf(colorToHex(color))
                 )
             } catch (_: Exception) {}
         }
@@ -547,7 +548,7 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
                 style.setStyleLayerProperty(
                     "mapbox-navigation-route-traffic-layer",
                     "line-color",
-                    colorToHex(color)
+                    Value.valueOf(colorToHex(color))
                 )
             } catch (_: Exception) {}
         }
@@ -557,12 +558,12 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
                 style.setStyleLayerProperty(
                     "mapbox-navigation-arrow-shaft-layer",
                     "line-color",
-                    colorToHex(color)
+                    Value.valueOf(colorToHex(color))
                 )
                 style.setStyleLayerProperty(
                     "mapbox-navigation-arrow-head-layer",
                     "fill-color",
-                    colorToHex(color)
+                    Value.valueOf(colorToHex(color))
                 )
             } catch (_: Exception) {}
         }
