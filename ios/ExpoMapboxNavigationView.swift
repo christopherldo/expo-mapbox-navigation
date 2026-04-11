@@ -105,6 +105,7 @@ class ExpoMapboxNavigationViewController: UIViewController {
     private var waypointArrivalCancellable: AnyCancellable? = nil
     private var reroutingCancellable: AnyCancellable? = nil
     private var sessionCancellable: AnyCancellable? = nil
+    private var cameraStateCancellable: AnyCancellable? = nil
 
     init() {
         super.init(nibName: nil, bundle: nil)
@@ -205,6 +206,7 @@ class ExpoMapboxNavigationViewController: UIViewController {
         waypointArrivalCancellable?.cancel()
         reroutingCancellable?.cancel()
         sessionCancellable?.cancel()
+        cameraStateCancellable?.cancel()
     }
 
     override func viewDidDisappear(_ animated: Bool) {
@@ -432,7 +434,6 @@ class ExpoMapboxNavigationViewController: UIViewController {
         if let padding = followingCameraPadding {
             viewportDataSource.options.followingCameraOptions.paddingUpdatesAllowed = true
             navigationMapView.navigationCamera.viewportDataSource = viewportDataSource
-            // Apply via camera options
             let cameraOptions = CameraOptions(padding: padding)
             navigationMapView.mapView.mapboxMap.setCamera(to: cameraOptions)
         }
@@ -501,20 +502,8 @@ class ExpoMapboxNavigationViewController: UIViewController {
             }
         }
 
-        // Floating buttons — these are in the floatingStackView or individual subviews
-        // We find them by type in the navigation view hierarchy
-        let soundButtons = navView.findViews(subclassOf: UIButton.self).filter {
-            $0.accessibilityIdentifier == "MapboxSoundButton" || $0.accessibilityLabel == "Sound"
-        }
-        // Since MapboxNavigationUIKit doesn't expose these directly by a stable identifier,
-        // we use the floatingButtons array on NavigationView
-        navView.floatingButtons?.forEach { button in
-            // The floating buttons stack typically contains: sound, overview, recenter-like buttons
-            // We can identify them by their position or by checking specific properties
-        }
-
-        // Apply via the wayNameView and other known views
-        navView.wayNameView.isHidden = false // keep way name visible
+        // Keep way name visible
+        navView.wayNameView.isHidden = false
     }
 
     // ── UI Styling Setters ─────────────────────────────────────────────
@@ -731,8 +720,23 @@ class ExpoMapboxNavigationViewController: UIViewController {
         let cancelButton = navigationViewController.navigationView.bottomBannerContainerView.findViews(subclassOf: CancelButton.self)[0]
         cancelButton.addTarget(self, action: #selector(cancelButtonClicked), for: .touchUpInside)
 
-        // Register camera state observer for onNavigationStateChanged event
-        navigationMapView?.navigationCamera.addCameraStateObserver(self)
+        // Observe camera state changes via Combine
+        cameraStateCancellable?.cancel()
+        cameraStateCancellable = navigationMapView?.navigationCamera.$state.sink { [weak self] state in
+            guard let self = self else { return }
+            let stateString: String
+            switch state {
+            case .idle:
+                stateString = "idle"
+            case .following:
+                stateString = "following"
+            case .overview:
+                stateString = "overview"
+            @unknown default:
+                stateString = "idle"
+            }
+            self.onNavigationStateChanged?(["state": stateString])
+        }
 
         navigationViewController.delegate = self
         addChild(navigationViewController)
@@ -775,24 +779,6 @@ extension ExpoMapboxNavigationViewController: NavigationViewControllerDelegate {
         _ navigationViewController: NavigationViewController,
         byCanceling canceled: Bool
     ) { }
-}
-
-// MARK: - NavigationCameraStateObserver
-extension ExpoMapboxNavigationViewController: NavigationCameraStateObserver {
-    func navigationCameraStateDidChange(_ state: NavigationCameraState) {
-        let stateString: String
-        switch state {
-        case .idle:
-            stateString = "idle"
-        case .following:
-            stateString = "following"
-        case .overview:
-            stateString = "overview"
-        @unknown default:
-            stateString = "idle"
-        }
-        onNavigationStateChanged?(["state": stateString])
-    }
 }
 
 // MARK: - UIColor hex extension
