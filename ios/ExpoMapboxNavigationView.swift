@@ -42,7 +42,10 @@ class ExpoMapboxNavigationView: ExpoView {
 
 
 class ExpoMapboxNavigationViewController: UIViewController {
-    static let navigationProvider: MapboxNavigationProvider = MapboxNavigationProvider(coreConfig: CoreConfig(routingConfig: RoutingConfig(fasterRouteDetectionConfig: Optional<FasterRouteDetectionConfig>.none),locationSource: .live ))
+    // Shared on-device speech synthesizer. Injected via `TTSConfig.custom` so the
+    // spoken language tracks the requested locale and the app can pick a voice.
+    static let systemSpeechSynthesizer = ExpoSystemSpeechSynthesizer()
+    static let navigationProvider: MapboxNavigationProvider = MapboxNavigationProvider(coreConfig: CoreConfig(routingConfig: RoutingConfig(fasterRouteDetectionConfig: Optional<FasterRouteDetectionConfig>.none),locationSource: .live, ttsConfig: .custom(speechSynthesizer: systemSpeechSynthesizer)))
     var mapboxNavigation: MapboxNavigation? = nil
     var routingProvider: RoutingProvider? = nil
     var navigation: NavigationController? = nil
@@ -55,6 +58,8 @@ class ExpoMapboxNavigationViewController: UIViewController {
     var initialLocationZoom: Double? = nil
     var currentWaypointIndices: Array<Int>? = nil
     var currentLocale: Locale = Locale.current
+    var currentUnitSystem: String? = nil
+    var currentVoiceId: String? = nil
     var currentRouteProfile: String? = nil
     var currentRouteExcludeList: Array<String>? = nil
     var currentMapStyle: String? = nil
@@ -317,7 +322,32 @@ class ExpoMapboxNavigationViewController: UIViewController {
         } else {
             currentLocale = Locale.current
         }
+        ExpoMapboxNavigationViewController.systemSpeechSynthesizer.locale = currentLocale
         update()
+    }
+
+    func setUnitSystem(unitSystem: String?) {
+        currentUnitSystem = unitSystem
+        update()
+    }
+
+    func setVoiceId(voiceId: String?) {
+        currentVoiceId = voiceId
+        ExpoMapboxNavigationViewController.systemSpeechSynthesizer.voiceIdentifier = voiceId
+    }
+
+    // Resolves whether to use the imperial system from the explicit `unitSystem`
+    // prop, falling back to the locale when not set.
+    private func resolveUsesImperial() -> Bool {
+        switch currentUnitSystem?.lowercased() {
+        case "imperial": return true
+        case "metric": return false
+        default: return !currentLocale.usesMetricSystem
+        }
+    }
+
+    private func resolveDistanceUnit() -> LengthFormatter.Unit {
+        return resolveUsesImperial() ? .mile : .meter
     }
 
     func setIsUsingRouteMatchingApi(useRouteMatchingApi: Bool?){
@@ -583,7 +613,7 @@ class ExpoMapboxNavigationViewController: UIViewController {
                 URLQueryItem(name: "max_width", value: String(format: "%.1f", vehicleMaxWidth ?? 0.0))
             ],
             locale: currentLocale,
-            distanceUnit: currentLocale.usesMetricSystem ? LengthFormatter.Unit.meter : LengthFormatter.Unit.mile
+            distanceUnit: resolveDistanceUnit()
         )
 
         calculateRoutesTask = Task {
@@ -604,7 +634,7 @@ class ExpoMapboxNavigationViewController: UIViewController {
             waypoints: waypoints,
             profileIdentifier: currentRouteProfile != nil ? ProfileIdentifier(rawValue: currentRouteProfile!) : nil,
             queryItems: [URLQueryItem(name: "exclude", value: currentRouteExcludeList?.joined(separator: ","))],
-            distanceUnit: currentLocale.usesMetricSystem ? LengthFormatter.Unit.meter : LengthFormatter.Unit.mile
+            distanceUnit: resolveDistanceUnit()
         )
         matchOptions.locale = currentLocale
 

@@ -18,6 +18,12 @@ class ExpoMapboxNavigationModule : Module() {
   override fun definition() = ModuleDefinition {
     Name("ExpoMapboxNavigation")
 
+    // Lists on-device TTS voices, optionally filtered to a language tag (e.g.
+    // "pt-BR"), for a voice-selection UI. Each item: { id, name, language }.
+    AsyncFunction("getAvailableVoices") { language: String? ->
+      SystemVoicePlayer.queryAvailableVoices(activity.applicationContext, language)
+    }
+
     OnActivityEntersForeground {
       (activity as LifecycleOwner).lifecycleScope.launch(Dispatchers.Main) {
         if (!MapboxNavigationApp.isSetup()) {
@@ -72,6 +78,10 @@ class ExpoMapboxNavigationModule : Module() {
         view.setLocale(localeStr)
       }
 
+      Prop("unitSystem") { view: ExpoMapboxNavigationView, unitSystem: String? ->
+        view.setUnitSystem(unitSystem)
+      }
+
       Prop("useRouteMatchingApi") { view: ExpoMapboxNavigationView, useRouteMatchingApi: Boolean? ->
         view.setIsUsingRouteMatchingApi(useRouteMatchingApi)
       }
@@ -116,6 +126,8 @@ class ExpoMapboxNavigationModule : Module() {
       // ── Voice Configuration ──────────────────────────────────────
 
       Prop("mute") { view: ExpoMapboxNavigationView, isMuted: Boolean? -> view.setIsMuted(isMuted) }
+
+      Prop("voiceId") { view: ExpoMapboxNavigationView, voiceId: String? -> view.setVoiceId(voiceId) }
 
       // ── Camera Configuration ─────────────────────────────────────
 

@@ -14,8 +14,8 @@ import androidx.constraintlayout.widget.ConstraintLayout
 import androidx.constraintlayout.widget.ConstraintSet
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.setViewTreeLifecycleOwner
+import com.mapbox.api.directions.v5.DirectionsCriteria
 import com.mapbox.api.directions.v5.models.RouteOptions
-import com.mapbox.bindgen.Expected
 import com.mapbox.bindgen.Value
 import com.mapbox.common.location.Location
 import com.mapbox.geojson.Point
@@ -38,6 +38,7 @@ import com.mapbox.maps.plugin.locationcomponent.OnIndicatorPositionChangedListen
 import com.mapbox.maps.plugin.locationcomponent.location
 import com.mapbox.navigation.base.extensions.applyDefaultNavigationOptions
 import com.mapbox.navigation.base.formatter.DistanceFormatterOptions
+import com.mapbox.navigation.base.formatter.UnitType
 import com.mapbox.navigation.base.route.NavigationRoute
 import com.mapbox.navigation.base.route.NavigationRouterCallback
 import com.mapbox.navigation.base.route.RouterFailure
@@ -65,7 +66,6 @@ import com.mapbox.navigation.tripdata.progress.model.EstimatedTimeToArrivalForma
 import com.mapbox.navigation.tripdata.progress.model.TimeRemainingFormatter
 import com.mapbox.navigation.tripdata.progress.model.TripProgressUpdateFormatter
 import com.mapbox.navigation.tripdata.progress.model.TripProgressUpdateValue
-import com.mapbox.navigation.ui.base.util.MapboxNavigationConsumer
 import com.mapbox.navigation.ui.components.maneuver.model.ManeuverPrimaryOptions
 import com.mapbox.navigation.ui.components.maneuver.model.ManeuverViewOptions
 import com.mapbox.navigation.ui.components.maneuver.view.MapboxManeuverView
@@ -86,11 +86,6 @@ import com.mapbox.navigation.ui.maps.route.arrow.model.RouteArrowOptions
 import com.mapbox.navigation.ui.maps.route.line.api.MapboxRouteLineApi
 import com.mapbox.navigation.ui.maps.route.line.api.MapboxRouteLineView
 import com.mapbox.navigation.ui.maps.route.line.model.*
-import com.mapbox.navigation.voice.api.*
-import com.mapbox.navigation.voice.model.SpeechAnnouncement
-import com.mapbox.navigation.voice.model.SpeechError
-import com.mapbox.navigation.voice.model.SpeechValue
-import com.mapbox.navigation.voice.model.SpeechVolume
 import expo.modules.kotlin.AppContext
 import expo.modules.kotlin.viewevent.EventDispatcher
 import expo.modules.kotlin.views.ExpoView
@@ -113,6 +108,8 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
     private var isMuted = false
     private var currentCoordinates: List<Point>? = null
     private var currentLocale = Locale.getDefault()
+    private var currentUnitSystem: String? = null
+    private var currentVoiceId: String? = null
     private var currentWaypointIndices: List<Int>? = null
     private var currentRoutesRequestId: Long? = null
     private var currentMapMatchingRequestId: Long? = null
@@ -169,8 +166,7 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
     private val mapboxNavigation = MapboxNavigationApp.current()
     private var mapboxStyle: Style? = null
     private val navigationLocationProvider = NavigationLocationProvider()
-    private var voiceInstructionsPlayer =
-            MapboxVoiceInstructionsPlayer(context, currentLocale.toLanguageTag())
+    private val systemVoicePlayer = SystemVoicePlayer(context, currentLocale, currentVoiceId)
 
     // ── Layout ─────────────────────────────────────────────────────────
 
@@ -210,12 +206,12 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
     private val soundButtonId = 4
     private val soundButton =
             createSoundButton(soundButtonId, parentConstraintLayout) {
-                voiceInstructionsPlayer.volume(SpeechVolume(if (isMuted) 1.0f else 0.0f))
+                isMuted = !isMuted
+                systemVoicePlayer.setMuted(isMuted)
                 it.findViewById<ImageView>(com.mapbox.navigation.ui.components.R.id.buttonIcon)
                         .setImageResource(
-                                if (isMuted) R.drawable.icon_sound else R.drawable.icon_mute
+                                if (isMuted) R.drawable.icon_mute else R.drawable.icon_sound
                         )
-                isMuted = !isMuted
             }
 
     private val overviewButtonId = 5
@@ -266,7 +262,11 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
 
     // ── Maneuver & Trip Progress ───────────────────────────────────────
 
-    private val distanceFormatter = DistanceFormatterOptions.Builder(context).build()
+    private val distanceFormatter =
+            DistanceFormatterOptions.Builder(context)
+                    .locale(currentLocale)
+                    .unitType(resolveUnitType())
+                    .build()
     private var maneuverApi = MapboxManeuverApi(MapboxDistanceFormatter(distanceFormatter))
 
     private var tripProgressFormatter =
@@ -279,29 +279,10 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
 
     // ── Voice ──────────────────────────────────────────────────────────
 
-    private var speechApi = MapboxSpeechApi(context, currentLocale.toLanguageTag())
-    private val voiceInstructionsPlayerCallback =
-            MapboxNavigationConsumer<SpeechAnnouncement> { value -> speechApi.clean(value) }
-
-    private val speechCallback =
-            MapboxNavigationConsumer<Expected<SpeechError, SpeechValue>> { expected ->
-                expected.fold(
-                        { error ->
-                            voiceInstructionsPlayer.play(
-                                    error.fallback,
-                                    voiceInstructionsPlayerCallback
-                            )
-                        },
-                        { value ->
-                            voiceInstructionsPlayer.play(
-                                    value.announcement,
-                                    voiceInstructionsPlayerCallback
-                            )
-                        }
-                )
-            }
+    // Speaks the plain-text instruction via the on-device TTS engine. This
+    // bypasses the Mapbox cloud Voice API so language/units/voice are honored.
     private val voiceInstructionsObserver = VoiceInstructionsObserver { voiceInstructions ->
-        speechApi.generate(voiceInstructions, speechCallback)
+        systemVoicePlayer.play(voiceInstructions.announcement())
     }
 
     // ── Observers ──────────────────────────────────────────────────────
@@ -374,8 +355,7 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
                     }
 
                     // Clear speech
-                    speechApi.cancel()
-                    voiceInstructionsPlayer.clear()
+                    systemVoicePlayer.stop()
 
                     // Add observer to navigation camera
                     navigationCamera.registerNavigationCameraStateChangeObserver {
@@ -928,8 +908,7 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
         if (mapboxNavigation?.isDestroyed != true) {
             mapboxNavigation?.stopTripSession()
         }
-        speechApi.cancel()
-        voiceInstructionsPlayer.shutdown()
+        systemVoicePlayer.shutdown()
         mapView.location.removeOnIndicatorPositionChangedListener(
                 onIndicatorPositionChangedListener
         )
@@ -1018,6 +997,12 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
     }
 
     @com.mapbox.navigation.base.ExperimentalPreviewMapboxNavigationAPI
+    fun setUnitSystem(unitSystem: String?) {
+        currentUnitSystem = unitSystem
+        update()
+    }
+
+    @com.mapbox.navigation.base.ExperimentalPreviewMapboxNavigationAPI
     fun setWaypointIndices(indices: List<Int>?) {
         currentWaypointIndices = indices
         update()
@@ -1058,11 +1043,16 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
     fun setIsMuted(isMutedProp: Boolean?) {
         if (isMutedProp != null) {
             isMuted = isMutedProp
-            voiceInstructionsPlayer.volume(SpeechVolume(if (isMuted) 0.0f else 1.0f))
+            systemVoicePlayer.setMuted(isMuted)
             soundButton
                     .findViewById<ImageView>(com.mapbox.navigation.ui.components.R.id.buttonIcon)
                     .setImageResource(if (isMuted) R.drawable.icon_mute else R.drawable.icon_sound)
         }
+    }
+
+    fun setVoiceId(voiceId: String?) {
+        currentVoiceId = voiceId
+        systemVoicePlayer.setVoice(voiceId)
     }
 
     // ── Prop Setters: Map ──────────────────────────────────────────────
@@ -1248,16 +1238,35 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
         style.addLayerAbove(rasterLayer, aboveLayerId)
     }
 
+    // ── Units (i18n) ───────────────────────────────────────────────────
+
+    // Countries that use the imperial system. Used as fallback when no
+    // explicit unitSystem prop is provided.
+    private fun localeUsesImperial(locale: Locale): Boolean =
+            locale.country.uppercase(Locale.ROOT) in setOf("US", "LR", "MM")
+
+    // Resolves the unit type from the explicit `unitSystem` prop, falling back
+    // to the locale's country when not set.
+    private fun resolveUnitType(): UnitType =
+            when (currentUnitSystem?.lowercase(Locale.ROOT)) {
+                "imperial" -> UnitType.IMPERIAL
+                "metric" -> UnitType.METRIC
+                else -> if (localeUsesImperial(currentLocale)) UnitType.IMPERIAL else UnitType.METRIC
+            }
+
+    // Spoken distance units requested from the Directions API. Without this the
+    // API falls back to the language region default (e.g. miles for en).
+    private fun resolveVoiceUnits(): String =
+            if (resolveUnitType() == UnitType.IMPERIAL) DirectionsCriteria.IMPERIAL
+            else DirectionsCriteria.METRIC
+
     // ── Route Calculation ──────────────────────────────────────────────
 
     @com.mapbox.navigation.base.ExperimentalPreviewMapboxNavigationAPI
     private fun update() {
-        voiceInstructionsPlayer =
-                MapboxVoiceInstructionsPlayer(context, currentLocale.toLanguageTag())
-        voiceInstructionsPlayer.volume(
-                SpeechVolume(if (isMuted) 0.0f else 1.0f)
-        ) // Initial volume based on current isMuted state
-        speechApi = MapboxSpeechApi(context, currentLocale.toLanguageTag())
+        systemVoicePlayer.setLocale(currentLocale)
+        systemVoicePlayer.setVoice(currentVoiceId)
+        systemVoicePlayer.setMuted(isMuted)
 
         if (currentMapStyle != null) {
             mapboxMap.loadStyle(currentMapStyle!!) { style: Style ->
@@ -1273,7 +1282,10 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
         }
 
         val distanceFormatter =
-                DistanceFormatterOptions.Builder(context).locale(currentLocale).build()
+                DistanceFormatterOptions.Builder(context)
+                        .locale(currentLocale)
+                        .unitType(resolveUnitType())
+                        .build()
         maneuverApi = MapboxManeuverApi(MapboxDistanceFormatter(distanceFormatter))
 
         tripProgressFormatter =
@@ -1309,6 +1321,7 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
                         .steps(true)
                         .voiceInstructions(true)
                         .language(currentLocale.toLanguageTag())
+                        .voiceUnits(resolveVoiceUnits())
                         .maxHeight(vehicleMaxHeight ?: null)
                         .maxWidth(vehicleMaxWidth ?: null)
                         .alternatives(currentDisableAlternativeRoutes != true)

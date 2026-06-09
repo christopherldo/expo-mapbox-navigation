@@ -46,6 +46,18 @@ type NavigationStateEvent = {
   state: "idle" | "following" | "overview";
 };
 
+/**
+ * An on-device text-to-speech voice, as returned by `getAvailableVoices()`.
+ */
+export type SystemVoice = {
+  /** Stable identifier to pass to the `voiceId` prop. */
+  id: string;
+  /** Human-readable voice name (may equal the id on Android). */
+  name: string;
+  /** BCP-47 language tag of the voice (e.g., "pt-BR"). */
+  language: string;
+};
+
 export type ExpoMapboxNavigationViewRef = {
   /** Recenters the map camera to follow the user's location. */
   recenterMap: () => void;
@@ -66,6 +78,11 @@ export type ExpoMapboxNavigationViewProps = {
   useRouteMatchingApi?: boolean;
   /** Language/locale code for labels, directions and voice instructions (e.g., "en-US", "pt-BR"). */
   locale?: string;
+  /**
+   * Measurement system for spoken and displayed distances.
+   * When omitted, it is derived from the locale's region.
+   */
+  unitSystem?: "metric" | "imperial";
   /** Route profile identifier (e.g., "mapbox/driving-traffic", "mapbox/walking"). */
   routeProfile?: string;
   /** Road types to exclude from routing (e.g., ["toll", "motorway", "ferry"]). */
@@ -96,6 +113,12 @@ export type ExpoMapboxNavigationViewProps = {
 
   /** Mute voice instructions. */
   mute?: boolean;
+  /**
+   * Identifier of the on-device system voice used for spoken instructions.
+   * Obtain valid identifiers from `getAvailableVoices()`. When omitted, the
+   * default system voice for the current locale is used.
+   */
+  voiceId?: string;
 
   // ── Camera Configuration ─────────────────────────────────────────────
 
