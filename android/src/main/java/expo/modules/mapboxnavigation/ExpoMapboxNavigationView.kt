@@ -23,6 +23,7 @@ import com.mapbox.geojson.utils.PolylineUtils
 import com.mapbox.maps.CameraOptions
 import com.mapbox.maps.EdgeInsets
 import com.mapbox.maps.ImageHolder
+import com.mapbox.maps.LayerPosition
 import com.mapbox.maps.MapView
 import com.mapbox.maps.MapboxMap
 import com.mapbox.maps.Style
@@ -34,6 +35,7 @@ import com.mapbox.maps.extension.style.sources.addSource
 import com.mapbox.maps.extension.style.sources.generated.RasterSource
 import com.mapbox.maps.plugin.LocationPuck2D
 import com.mapbox.maps.plugin.animation.camera
+import com.mapbox.maps.plugin.locationcomponent.LocationComponentConstants
 import com.mapbox.maps.plugin.locationcomponent.OnIndicatorPositionChangedListener
 import com.mapbox.maps.plugin.locationcomponent.location
 import com.mapbox.navigation.base.extensions.applyDefaultNavigationOptions
@@ -350,7 +352,10 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
                                 result.navigationRoutes,
                                 alternativesMetadata
                         ) { value ->
-                            mapboxStyle?.let { routeLineView.renderRouteDrawData(it, value) }
+                            mapboxStyle?.let {
+                                routeLineView.renderRouteDrawData(it, value)
+                                movePuckAboveRouteLine()
+                            }
                         }
                     }
 
@@ -486,6 +491,29 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
     private val onIndicatorPositionChangedListener = OnIndicatorPositionChangedListener { point ->
         val result = routeLineApi.updateTraveledRouteLine(point)
         mapboxStyle?.let { routeLineView.renderRouteLineUpdate(it, result) }
+    }
+
+    // ── Layer Ordering Helpers ─────────────────────────────────────────
+
+    /**
+     * Keeps the location puck drawn above the route line. The route line layers
+     * are inserted below "road-label" (high in the stack), which otherwise ends
+     * up above the location indicator layer and hides the puck. Mirrors how the
+     * maneuver arrow is positioned above TOP_LEVEL_ROUTE_LINE_LAYER_ID. Guarded
+     * by layer existence since the puck layer only exists once the style loads
+     * and the route line layers only after the first draw.
+     */
+    private fun movePuckAboveRouteLine() {
+        val style = mapboxStyle ?: return
+        if (
+                style.styleLayerExists(LocationComponentConstants.LOCATION_INDICATOR_LAYER) &&
+                        style.styleLayerExists(TOP_LEVEL_ROUTE_LINE_LAYER_ID)
+        ) {
+            style.moveStyleLayer(
+                    LocationComponentConstants.LOCATION_INDICATOR_LAYER,
+                    LayerPosition(TOP_LEVEL_ROUTE_LINE_LAYER_ID, null, null),
+            )
+        }
     }
 
     // ── Route Line Color Helpers ───────────────────────────────────────
