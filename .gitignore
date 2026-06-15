@@ -9,6 +9,9 @@ jsconfig.json
 # Xcode
 #
 build/
+# ...but ship the compiled module output at the repo root (consumed via git install)
+!/build/
+!/build/**
 *.pbxuser
 !default.pbxuser
 *.mode1v3
